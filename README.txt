@@ -68,3 +68,48 @@ I client possono entrare in stanze diverse e parlare tra loro.
 - Tutti i client si connettono a 127.0.0.1 (localhost) sulla porta 5555
 - Se la stanza non esiste, viene creata automaticamente
 - Se tutti escono da una stanza, la stanza viene eliminata
+
+
+===================================
+  INTERFACCIA WEB (UI grafica)
+===================================
+
+Oltre al client da terminale (client.py) e' disponibile una interfaccia
+web moderna. NON sostituisce il server: ci si appoggia tramite un gateway
+che fa da ponte verso server.py.
+
+  Browser  <--WebSocket-->  web_gateway.py  <--TCP-->  server.py
+
+
+--- INSTALLAZIONE (una volta sola) ---
+
+   pip install -r requirements.txt
+
+
+--- AVVIO ---
+
+1. Avvia il server TCP (come sempre):
+
+   python server.py
+
+2. In un ALTRO terminale avvia il gateway web:
+
+   python web_gateway.py
+
+3. Apri il browser su:
+
+   http://127.0.0.1:8000
+
+4. Inserisci username e stanza nella schermata di accesso e premi
+   "Entra nella chat". Puoi aprire piu' schede/browser per simulare
+   piu' utenti.
+
+
+--- FUNZIONALITA' DELLA UI ---
+
+- Messaggi normali con bolle in stile chat
+- Messaggi privati evidenziati (comando /msg utente testo,
+  oppure clic su un utente nella barra laterale)
+- Lista utenti della stanza sempre aggiornata (pulsante /list)
+- Avatar colorati generati dal nome utente
+- Design responsive (funziona anche da telefono sulla stessa rete)

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Multi-Stanza</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- ===================== SCHERMATA DI ACCESSO ===================== -->
+    <section id="login-screen" class="login-screen">
+        <div class="login-card">
+            <div class="login-logo">
+                <span class="logo-dot"></span>
+                <span class="logo-dot"></span>
+                <span class="logo-dot"></span>
+            </div>
+            <h1 class="login-title">Chat Multi-Stanza</h1>
+            <p class="login-subtitle">Entra in una stanza e inizia a chattare</p>
+
+            <form id="login-form" class="login-form" autocomplete="off">
+                <label class="field">
+                    <span class="field-label">Username</span>
+                    <input id="username-input" type="text" placeholder="es. Mario" maxlength="24" required>
+                </label>
+                <label class="field">
+                    <span class="field-label">Stanza</span>
+                    <input id="room-input" type="text" placeholder="es. generale" maxlength="32" required>
+                </label>
+                <button type="submit" class="btn-primary">Entra nella chat</button>
+                <p id="login-error" class="login-error" hidden></p>
+            </form>
+        </div>
+        <footer class="login-footer">Powered by server.py · TCP 127.0.0.1:5555</footer>
+    </section>
+
+    <!-- ===================== SCHERMATA DI CHAT ===================== -->
+    <section id="chat-screen" class="chat-screen" hidden>
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="room-badge">#</div>
+                <div class="room-info">
+                    <span class="room-label">Stanza</span>
+                    <span id="room-name" class="room-name">—</span>
+                </div>
+            </div>
+
+            <div class="users-section">
+                <div class="users-header">
+                    <span id="users-title">Utenti</span>
+                    <button id="refresh-users" class="icon-btn" title="Aggiorna lista">&#x21bb;</button>
+                </div>
+                <ul id="users-list" class="users-list"></ul>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="me">
+                    <div id="my-avatar" class="avatar">?</div>
+                    <span id="my-name" class="my-name">—</span>
+                </div>
+                <button id="leave-btn" class="btn-leave">Esci</button>
+            </div>
+        </aside>
+
+        <main class="chat-main">
+            <header class="chat-topbar">
+                <div class="topbar-title">
+                    <span id="topbar-room" class="topbar-room">#stanza</span>
+                    <span class="topbar-status"><span class="status-dot"></span> Connesso</span>
+                </div>
+            </header>
+
+            <div id="messages" class="messages"></div>
+
+            <form id="message-form" class="composer" autocomplete="off">
+                <button type="button" id="cmd-list" class="composer-cmd" title="Lista utenti (/list)">/list</button>
+                <div class="composer-field">
+                    <input id="message-input" type="text" placeholder="Scrivi un messaggio…  (usa /msg utente testo per i privati)" autocomplete="off">
+                    <ul id="msg-user-picker" class="msg-user-picker" hidden></ul>
+                    <ul id="cmd-picker" class="msg-user-picker cmd-picker" hidden></ul>
+                </div>
+                <button type="submit" class="btn-send" title="Invia">
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                        <path fill="currentColor" d="M3 11l18-8-8 18-2-7-8-3z"/>
+                    </svg>
+                </button>
+            </form>
+        </main>
+    </section>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
