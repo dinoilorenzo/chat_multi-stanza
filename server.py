@@ -59,7 +59,7 @@ def avvia_partita(sock):
 
     # controllo se c'è già una partita in corso in questa stanza
     if nome_stanza in partite:
-        invia(sock, "C'e' gia' una partita in corso in questa stanza!\n")
+        invia(sock, f"C'è già una partita in corso in questa stanza!\n")
         return
 
     # controllo che ci siano almeno 2 giocatori
@@ -99,7 +99,7 @@ def gestisci_mossa(sock, numero_cella):
 
     # controllo se c'è una partita in questa stanza
     if nome_stanza not in partite:
-        invia(sock, "Non c'e' nessuna partita in corso. Usa /game per iniziarne una.\n")
+        invia(sock, "Non c'è nessuna partita in corso. Usa /game per iniziarne una.\n")
         return
 
     partita = partite[nome_stanza]
@@ -111,17 +111,17 @@ def gestisci_mossa(sock, numero_cella):
 
     # controllo il turno
     if partita['turno'] != sock:
-        invia(sock, "Non e' il tuo turno! Aspetta.\n")
+        invia(sock, "Non è il tuo turno! Aspetta.\n")
         return
 
-    # controllo validita' della cella
+    # controllo validità della cella
     if numero_cella < 1 or numero_cella > 9:
         invia(sock, "Numero non valido! Scegli una cella da 1 a 9.\n")
         return
 
     indice = numero_cella - 1
     if partita['board'][indice] != " ":
-        invia(sock, "Cella gia' occupata! Scegline un'altra.\n")
+        invia(sock, "Cella già occupata! Scegline un'altra.\n")
         return
 
     # eseguo la mossa
@@ -206,7 +206,7 @@ def rimuovi_client(sock):
         if nome_stanza in partite:
             partita = partite[nome_stanza]
             if sock in partita['simboli']:
-                broadcast(f"\n=== {username} si e' disconnesso. Partita annullata. ===\n", nome_stanza)
+                broadcast(f"\n=== {username} si è disconnesso. Partita annullata. ===\n", nome_stanza)
                 broadcast("Potete usare /game per una nuova partita.\n", nome_stanza)
                 del partite[nome_stanza]
 
@@ -262,7 +262,7 @@ def gestisci_client(sock):
         # messaggio di benvenuto
         invia(sock, f"Benvenuto nella stanza '{nome_stanza}', {username}!\n")
         invia(sock, "Comandi: /msg utente testo | /list | /game | /mossa N | /quit\n")
-        broadcast(f"{username} e' entrato nella stanza.\n", nome_stanza, escludi=sock)
+        broadcast(f"{username} è entrato nella stanza.\n", nome_stanza, escludi=sock)
 
     except:
         sock.close()
@@ -293,7 +293,7 @@ def gestisci_client(sock):
                 if len(parti) == 2 and parti[1].isdigit():
                     gestisci_mossa(sock, int(parti[1]))
                 else:
-                    invia(sock, "Uso: /mossa N (dove N e' un numero da 1 a 9)\n")
+                    invia(sock, "Uso: /mossa N (dove N è un numero da 1 a 9)\n")
 
             elif dato.startswith("/msg "):
                 # messaggio privato (point-to-point)
@@ -321,7 +321,7 @@ def gestisci_client(sock):
         except:
             break
 
-    # il client si e' disconnesso
+    # il client si è disconnesso
     rimuovi_client(sock)
 
 

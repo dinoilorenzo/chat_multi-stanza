@@ -181,20 +181,20 @@ function handleIncoming(text) {
     // 11) Messaggi di sistema (entrate/uscite/benvenuto/avvisi/tris)
     if (
         /^Benvenuto nella stanza/.test(text) ||
-        /e' entrato nella stanza/.test(text) ||
+        /entrato nella stanza/.test(text) ||
         /ha lasciato la stanza/.test(text) ||
         /^Utente '.*' non trovato/.test(text) ||
         /^Uso:/.test(text) ||
         /^Comandi:/.test(text) ||
         /^===/.test(text) ||
         /^Servono almeno/.test(text) ||
-        /^Non c'e' nessuna partita/.test(text) ||
+        /non c'è nessuna partita/i.test(text) ||
         /^Non sei uno dei giocatori/.test(text) ||
-        /^C'e' gia' una partita/.test(text) ||
+        /c'è già una partita/i.test(text) ||
         /^Pareggio/.test(text)
     ) {
         addSystemMessage(text);
-        if (/e' entrato nella stanza|ha lasciato la stanza/.test(text)) {
+        if (/entrato nella stanza|ha lasciato la stanza/.test(text)) {
             socket.emit("send_message", { text: "/list" });
         }
         return;
