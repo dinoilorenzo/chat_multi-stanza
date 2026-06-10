@@ -1,30 +1,29 @@
 import socket
 import threading
 import sys
+import time
 
 # indirizzo e porta del server
 HOST = "127.0.0.1"
 PORT = 5555
 
 
-def receive_messages(client_socket):
-    """Riceve i messaggi dal server e li stampa a schermo."""
+def ricevi_messaggi(sock):
+    """Riceve i messaggi dal server e li stampa. Gira in un thread separato."""
     while True:
         try:
-            message = client_socket.recv(4096).decode("utf-8")
-            if not message:
-                # il server ha chiuso la connessione
+            messaggio = sock.recv(4096).decode("utf-8")
+            if not messaggio:
                 print("\nConnessione chiusa dal server.")
                 break
-            print(message)
+            print(messaggio, end="")
         except:
-            # errore di connessione
-            print("\nConnessione persa con il server.")
+            print("\nConnessione persa.")
             break
 
 
-def start_client():
-    """Avvia il client e gestisce l'invio dei messaggi."""
+def avvia_client():
+    """Avvia il client della chat."""
     # chiedo il nome utente
     username = input("Inserisci il tuo username: ").strip()
     if not username:
@@ -32,76 +31,71 @@ def start_client():
         return
 
     # chiedo il nome della stanza
-    room_name = input("Inserisci il nome della stanza: ").strip()
-    if not room_name:
+    nome_stanza = input("Inserisci il nome della stanza: ").strip()
+    if not nome_stanza:
         print("Nome stanza non valido.")
         return
 
-    # creo il socket del client
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    # provo a connettermi al server
+    # creo il socket e mi connetto al server
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        client_socket.connect((HOST, PORT))
-        print(f"Connesso al server {HOST}:{PORT}")
+        sock.connect((HOST, PORT))
+        print(f"Connesso al server su {HOST}:{PORT}\n")
     except:
-        print("Impossibile connettersi al server. È avviato?")
+        print("Impossibile connettersi al server. E' avviato?")
         return
 
-    # invio il nome utente al server (primo messaggio)
-    client_socket.send(username.encode("utf-8"))
+    # invio il nome utente al server
+    sock.send(username.encode("utf-8"))
 
-    # piccola pausa per evitare che i messaggi si uniscano
-    import time
+    # piccola pausa per evitare che i messaggi si mescolino
     time.sleep(0.1)
 
-    # invio il nome della stanza al server (secondo messaggio)
-    client_socket.send(room_name.encode("utf-8"))
+    # invio il nome della stanza al server
+    sock.send(nome_stanza.encode("utf-8"))
 
-    # avvio il thread che riceve i messaggi in background
-    thread = threading.Thread(target=receive_messages, args=(client_socket,))
+    # avvio il thread che ascolta i messaggi in arrivo dal server
+    thread = threading.Thread(target=ricevi_messaggi, args=(sock,))
     thread.daemon = True
     thread.start()
 
-    # istruzioni per l'utente
-    print("\n--- Comandi disponibili ---")
-    print("/msg username messaggio  → messaggio privato")
-    print("/list                    → lista utenti nella stanza")
-    print("/quit                    → esci dalla chat")
-    print("---------------------------\n")
+    # spiego i comandi disponibili
+    print("--- Comandi ---")
+    print("/msg utente testo  → messaggio privato")
+    print("/list              → lista utenti nella stanza")
+    print("/game              → avvia una partita di Tris nella stanza")
+    print("/mossa N           → gioca nella cella N (1-9) durante una partita")
+    print("/quit              → esci dalla chat")
+    print("---------------\n")
 
-    # ciclo principale: leggo l'input dell'utente e lo invio al server
+    # ciclo principale: leggo l'input e lo invio al server
     while True:
         try:
-            message = input()
-            if not message:
+            comando = input()
+            if not comando:
                 continue
 
-            # invio il messaggio al server
-            client_socket.send(message.encode("utf-8"))
+            sock.send(comando.encode("utf-8"))
 
-            # se il comando è /quit, esco
-            if message.strip() == "/quit":
-                print("Disconnessione in corso...")
-                client_socket.close()
+            if comando.strip() == "/quit":
+                print("Uscita...")
+                sock.close()
                 sys.exit(0)
 
         except KeyboardInterrupt:
-            # l'utente ha premuto Ctrl+C
-            print("\nDisconnessione in corso...")
+            print("\nUscita...")
             try:
-                client_socket.send("/quit".encode("utf-8"))
+                sock.send("/quit".encode("utf-8"))
             except:
                 pass
-            client_socket.close()
+            sock.close()
             sys.exit(0)
         except:
-            # errore generico (connessione persa)
-            print("Errore di connessione.")
-            client_socket.close()
+            print("Connessione persa.")
+            sock.close()
             sys.exit(1)
 
 
-# --- Avvio del client ---
+# --- avvio del client ---
 if __name__ == "__main__":
-    start_client()
+    avvia_client()

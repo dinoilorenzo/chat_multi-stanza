@@ -698,37 +698,25 @@ body {
     }
 }
 
-/* ======================= SELETTORE MODALITÀ ======================= */
-.mode-selector {
-    display: flex;
-    gap: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 5px;
-}
-
-.mode-btn {
-    flex: 1;
-    background: transparent;
-    border: none;
-    border-radius: 7px;
-    padding: 10px;
+/* ======================= MESSAGGI VITTORIA / SCONFITTA ======================= */
+.msg-win {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.5);
+    color: #22c55e;
+    font-weight: 700;
     font-size: 14px;
-    font-weight: 600;
-    font-family: inherit;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: all 0.18s;
+    padding: 10px 20px;
 }
 
-.mode-btn.is-active {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+.msg-lose {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: var(--danger);
+    font-weight: 700;
+    font-size: 14px;
+    padding: 10px 20px;
 }
 
-/* ======================= SCACCHIERA TRIS ======================= */
 .tris-board {
     padding: 24px 22px 0;
     display: flex;

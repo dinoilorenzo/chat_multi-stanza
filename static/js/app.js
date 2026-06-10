@@ -1,5 +1,6 @@
-// Client web — Chat Multi-Stanza + Tris Multiplayer.
+// Client web della Chat Multi-Stanza con Tris integrato.
 // Comunica col gateway (web_gateway.py) via Socket.IO.
+// Il gateway fa da ponte verso server.py (TCP 5555).
 
 const socket = io();
 
@@ -8,28 +9,18 @@ let myName = "";
 let myRoom = "";
 let roomUsers = [];
 let wantListEcho = false;
-let currentMode = "chat";   // "chat" oppure "tris"
-let mySymbol = "";           // "X" oppure "O" (solo in modalità tris)
-let isMyTurn = false;        // true se tocca a me muovere
+let gameActive = false;   // true quando c'è una partita di tris in corso
+let isMyTurn = false;     // true quando tocca a me muovere nel tris
 
 // --- Riferimenti DOM ---
-const loginScreen    = document.getElementById("login-screen");
-const chatScreen     = document.getElementById("chat-screen");
-const loginForm      = document.getElementById("login-form");
-const usernameInput  = document.getElementById("username-input");
-const roomInput      = document.getElementById("room-input");
-const loginError     = document.getElementById("login-error");
-const enterBtn       = document.getElementById("enter-btn");
-const roomLabelEl    = document.getElementById("room-label");
+const loginScreen   = document.getElementById("login-screen");
+const chatScreen    = document.getElementById("chat-screen");
+const loginForm     = document.getElementById("login-form");
+const usernameInput = document.getElementById("username-input");
+const roomInput     = document.getElementById("room-input");
+const loginError    = document.getElementById("login-error");
 
-// selettore modalità
-const modeChatBtn = document.getElementById("mode-chat");
-const modeTrisBtn = document.getElementById("mode-tris");
-
-// schermata chat
 const roomNameEl    = document.getElementById("room-name");
-const roomBadgeEl   = document.getElementById("room-badge");
-const modeLabelEl   = document.getElementById("mode-label");
 const topbarRoomEl  = document.getElementById("topbar-room");
 const myNameEl      = document.getElementById("my-name");
 const myAvatarEl    = document.getElementById("my-avatar");
@@ -42,6 +33,7 @@ const messageInput  = document.getElementById("message-input");
 const msgUserPicker = document.getElementById("msg-user-picker");
 const cmdPicker     = document.getElementById("cmd-picker");
 const cmdListBtn    = document.getElementById("cmd-list");
+const cmdGameBtn    = document.getElementById("cmd-game");
 const refreshUsersBtn = document.getElementById("refresh-users");
 const leaveBtn      = document.getElementById("leave-btn");
 
@@ -50,24 +42,14 @@ const trisBoard  = document.getElementById("tris-board");
 const trisStatus = document.getElementById("tris-status");
 const trisCells  = document.querySelectorAll(".tris-cell");
 
-// ===================== SELETTORE MODALITÀ =====================
-modeChatBtn.addEventListener("click", () => {
-    currentMode = "chat";
-    modeChatBtn.classList.add("is-active");
-    modeTrisBtn.classList.remove("is-active");
-    roomLabelEl.textContent = "Stanza";
-    roomInput.placeholder = "es. generale";
-    enterBtn.textContent = "Entra nella chat";
-});
-
-modeTrisBtn.addEventListener("click", () => {
-    currentMode = "tris";
-    modeTrisBtn.classList.add("is-active");
-    modeChatBtn.classList.remove("is-active");
-    roomLabelEl.textContent = "Tavolo";
-    roomInput.placeholder = "es. Tavolo-1";
-    enterBtn.textContent = "Entra nella partita";
-});
+// comandi disponibili per l'autocompletamento
+const COMMANDS = [
+    { name: "/msg",   args: " ", desc: "Messaggio privato a un utente", template: "/msg " },
+    { name: "/list",  args: "",  desc: "Mostra gli utenti nella stanza", template: "/list" },
+    { name: "/game",  args: "",  desc: "Avvia una partita di Tris nella stanza", template: "/game" },
+    { name: "/mossa", args: " ", desc: "Gioca nella cella N (1-9)", template: "/mossa " },
+    { name: "/quit",  args: "",  desc: "Esci dalla chat", template: "/quit" },
+];
 
 // ===================== INVIO HANDSHAKE =====================
 loginForm.addEventListener("submit", (e) => {
@@ -78,17 +60,11 @@ loginForm.addEventListener("submit", (e) => {
 
     myName = username;
     myRoom = room;
-
-    // invio l'evento giusto in base alla modalità scelta
-    if (currentMode === "tris") {
-        socket.emit("join_tris", { username, room });
-    } else {
-        socket.emit("join", { username, room });
-    }
+    socket.emit("join", { username, room });
 });
 
 // ===================== EVENTI DAL GATEWAY =====================
-socket.on("joined", ({ username, room, mode }) => {
+socket.on("joined", ({ username, room }) => {
     myName = username;
     myRoom = room;
 
@@ -100,26 +76,10 @@ socket.on("joined", ({ username, room, mode }) => {
 
     loginScreen.hidden = true;
     chatScreen.hidden = false;
+    messageInput.focus();
 
-    // se la modalità è tris: mostro la scacchiera e nascondo il composer di chat
-    if (mode === "tris") {
-        currentMode = "tris";
-        trisBoard.hidden = false;
-        messageForm.hidden = true;
-        cmdListBtn.hidden = true;
-        roomBadgeEl.textContent = "❌";
-        modeLabelEl.textContent = "Tavolo";
-        trisStatus.textContent = "In attesa dell'avversario…";
-        resetBoard();
-    } else {
-        currentMode = "chat";
-        trisBoard.hidden = true;
-        messageForm.hidden = false;
-        roomBadgeEl.textContent = "#";
-        modeLabelEl.textContent = "Stanza";
-        messageInput.focus();
-        socket.emit("send_message", { text: "/list" });
-    }
+    // chiedo subito la lista utenti
+    socket.emit("send_message", { text: "/list" });
 });
 
 socket.on("error_msg", ({ text }) => {
@@ -132,94 +92,150 @@ socket.on("server_closed", () => {
 });
 
 socket.on("message", ({ text }) => {
-    // il messaggio arriva sempre come stringa grezza dal server (chat o tris)
-    if (currentMode === "tris") {
-        handleTrisMessage(text);
-    } else {
-        handleIncoming(text);
-    }
+    handleIncoming(text);
 });
 
-// ===================== LOGICA TRIS =====================
-function resetBoard() {
-    // svuoto tutte le celle della scacchiera
-    trisCells.forEach((cell) => {
-        cell.textContent = "";
-        cell.className = "tris-cell";
-        cell.disabled = true;   // le disabilito finché non tocca a me
-    });
-    isMyTurn = false;
-}
+// ===================== PARSING DEI MESSAGGI =====================
+function handleIncoming(text) {
 
-function handleTrisMessage(text) {
-    // il server tris manda messaggi di testo grezzo: li interpreto qui
-
-    // riga della scacchiera come " X | O |   " → aggiorno la cella corrispondente
-    // prima di tutto controllo se il testo contiene una scacchiera ASCII
-    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-
-    // cerco le tre righe di gioco (contengono "|")
-    const boardLines = lines.filter(l => l.match(/^\S+\s*\|\s*\S+\s*\|\s*\S+/));
-    if (boardLines.length === 3) {
-        // aggiorno la scacchiera grafica con i simboli estratti dalle righe
-        const symbols = [];
-        boardLines.forEach(line => {
-            // splitta per "|", e per ogni parte prende il simbolo (es. "X", "O" o " ")
-            line.split("|").forEach(part => {
-                const s = part.trim();
-                symbols.push(s === "" ? " " : s);
-            });
-        });
-        updateBoardUI(symbols);
+    // 1) Riga della scacchiera tris (contiene " | ") → aggiorno la UI grafica
+    if (text.includes(" | ") && text.includes("---+---+---") === false) {
+        if (gameActive) {
+            parseBoardLine(text);
+        }
+        // non mostro le righe ASCII in chat quando la board è visibile
         return;
     }
 
-    // "Tocca a te" → abilito i bottoni della scacchiera
+    // 2) Separatori della scacchiera: ignoro
+    if (/^---\+---\+---$/.test(text)) {
+        return;
+    }
+
+    // 3) Inizio partita → mostro la scacchiera e messaggio di sistema
+    if (/=== PARTITA DI TRIS/.test(text)) {
+        showBoard();
+        addSystemMessage(text);
+        return;
+    }
+
+    // 4) "Tocca a te" → abilito le celle
     if (/Tocca a te/i.test(text)) {
         isMyTurn = true;
         trisStatus.textContent = "🟢 Tocca a te! Clicca una cella.";
-        trisCells.forEach(cell => {
-            // abilito solo le celle ancora vuote
-            if (!cell.textContent) {
-                cell.disabled = false;
-            }
-        });
+        enableEmptyCells();
+        addSystemMessage(text);
         return;
     }
 
-    // "Aspetta il tuo turno" o "Aspetta" → disabilito i bottoni
-    if (/Aspetta/i.test(text)) {
+    // 5) "Aspetta il tuo turno" → disabilito le celle
+    if (/Aspetta il tuo turno/i.test(text)) {
         isMyTurn = false;
         trisStatus.textContent = "⏳ Aspetta il turno dell'avversario…";
-        trisCells.forEach(cell => { cell.disabled = true; });
+        disableAllCells();
+        addSystemMessage(text);
         return;
     }
 
-    // simbolo assegnato al giocatore: "Tu sei X" o "Tu sei O"
-    if (/Tu sei X/i.test(text)) {
-        mySymbol = "X";
-    } else if (/Tu sei O/i.test(text)) {
-        mySymbol = "O";
+    // 6) HAI VINTO → messaggio speciale di vittoria
+    if (/HAI VINTO/i.test(text)) {
+        isMyTurn = false;
+        disableAllCells();
+        addWinMessage(text);
+        return;
     }
 
-    // partita vinta, persa o pareggio → messaggio di sistema
-    if (/ha vinto|Pareggio|Nuova partita|Partita iniziata|sei entrato/i.test(text)) {
+    // 7) HAI PERSO → messaggio speciale di sconfitta
+    if (/HAI PERSO/i.test(text)) {
+        isMyTurn = false;
+        disableAllCells();
+        addLoseMessage(text);
+        return;
+    }
+
+    // 8) Fine partita → nascondo la scacchiera dopo qualche secondo
+    if (/Potete continuare a chattare/i.test(text)) {
         addSystemMessage(text);
-        if (/Nuova partita/i.test(text)) {
-            // resetto la scacchiera per la prossima partita
-            resetBoard();
+        setTimeout(hideBoard, 3000);
+        return;
+    }
+
+    // 9) Lista utenti → aggiorno la sidebar
+    const listMatch = text.match(/^Utenti nella stanza '.*?':\s*(.*)$/);
+    if (listMatch) {
+        updateUsersList(listMatch[1]);
+        if (wantListEcho) {
+            addSystemMessage(text);
+            wantListEcho = false;
         }
         return;
     }
 
-    // tutti gli altri messaggi (errori, avvisi) → log in chat
+    // 10) Messaggio privato: "[Privato da X]: testo"
+    const privMatch = text.match(/^\[Privato da (.+?)\]:\s?([\s\S]*)$/);
+    if (privMatch) {
+        addChatMessage(privMatch[1], privMatch[2], { mine: false, priv: true });
+        return;
+    }
+
+    // 11) Messaggi di sistema (entrate/uscite/benvenuto/avvisi/tris)
+    if (
+        /^Benvenuto nella stanza/.test(text) ||
+        /e' entrato nella stanza/.test(text) ||
+        /ha lasciato la stanza/.test(text) ||
+        /^Utente '.*' non trovato/.test(text) ||
+        /^Uso:/.test(text) ||
+        /^Comandi:/.test(text) ||
+        /^===/.test(text) ||
+        /^Servono almeno/.test(text) ||
+        /^Non c'e' nessuna partita/.test(text) ||
+        /^Non sei uno dei giocatori/.test(text) ||
+        /^C'e' gia' una partita/.test(text) ||
+        /^Pareggio/.test(text)
+    ) {
+        addSystemMessage(text);
+        if (/e' entrato nella stanza|ha lasciato la stanza/.test(text)) {
+            socket.emit("send_message", { text: "/list" });
+        }
+        return;
+    }
+
+    // 12) Messaggio normale: "username: testo"
+    const normalMatch = text.match(/^(.+?):\s([\s\S]*)$/);
+    if (normalMatch) {
+        addChatMessage(normalMatch[1], normalMatch[2], { mine: false, priv: false });
+        return;
+    }
+
+    // 13) Qualsiasi altra cosa → sistema
     if (text.trim()) {
         addSystemMessage(text);
     }
 }
 
+// ===================== LOGICA SCACCHIERA TRIS =====================
+
+// buffer per raccogliere le 3 righe della scacchiera prima di aggiornarla
+let boardLineBuffer = [];
+
+function parseBoardLine(line) {
+    // una riga della scacchiera ha questo formato: " X | O |   "
+    boardLineBuffer.push(line);
+    if (boardLineBuffer.length === 3) {
+        // ho tutte e 3 le righe: aggiorno la scacchiera grafica
+        const symbols = [];
+        boardLineBuffer.forEach(row => {
+            row.split("|").forEach(part => {
+                const s = part.trim();
+                symbols.push(s === "" ? " " : s);
+            });
+        });
+        updateBoardUI(symbols);
+        boardLineBuffer = [];
+    }
+}
+
 function updateBoardUI(symbols) {
-    // symbols è un array di 9 elementi: " ", "X" o "O"
     trisCells.forEach((cell, i) => {
         const s = symbols[i];
         if (s === "X") {
@@ -231,7 +247,6 @@ function updateBoardUI(symbols) {
             cell.className = "tris-cell o";
             cell.disabled = true;
         } else {
-            // cella vuota: abilitata solo se è il mio turno
             cell.textContent = "";
             cell.className = "tris-cell";
             cell.disabled = !isMyTurn;
@@ -239,69 +254,58 @@ function updateBoardUI(symbols) {
     });
 }
 
-// clic su una cella della scacchiera
-trisCells.forEach((cell) => {
+function showBoard() {
+    gameActive = true;
+    isMyTurn = false;
+    boardLineBuffer = [];
+    trisBoard.hidden = false;
+    trisStatus.textContent = "Partita in corso…";
+    resetBoard();
+}
+
+function hideBoard() {
+    gameActive = false;
+    isMyTurn = false;
+    boardLineBuffer = [];
+    trisBoard.hidden = true;
+}
+
+function resetBoard() {
+    trisCells.forEach(cell => {
+        cell.textContent = "";
+        cell.className = "tris-cell";
+        cell.disabled = true;
+    });
+}
+
+function enableEmptyCells() {
+    trisCells.forEach(cell => {
+        if (!cell.textContent) {
+            cell.disabled = false;
+        }
+    });
+}
+
+function disableAllCells() {
+    trisCells.forEach(cell => { cell.disabled = true; });
+}
+
+// clic su una cella della scacchiera → invia /mossa N
+trisCells.forEach(cell => {
     cell.addEventListener("click", () => {
         if (!isMyTurn || cell.disabled || cell.textContent !== "") return;
 
-        const numero = parseInt(cell.dataset.cell);
-        socket.emit("tris_move", { cell: numero });
+        const numero = cell.dataset.cell;
+        // invia il comando /mossa N come messaggio normale al server
+        socket.emit("send_message", { text: `/mossa ${numero}` });
 
-        // disabilito subito tutti i bottoni (aspetto la risposta del server)
         isMyTurn = false;
         trisStatus.textContent = "⏳ Aspetta il turno dell'avversario…";
-        trisCells.forEach(c => { c.disabled = true; });
+        disableAllCells();
     });
 });
 
-// ===================== PARSING DEI MESSAGGI CHAT =====================
-function handleIncoming(text) {
-    // 1) Lista utenti -> aggiorno la sidebar
-    const listMatch = text.match(/^Utenti nella stanza '.*?':\s*(.*)$/);
-    if (listMatch) {
-        updateUsersList(listMatch[1]);
-        if (wantListEcho) {
-            addSystemMessage(text);
-            wantListEcho = false;
-        }
-        return;
-    }
-
-    // 2) Messaggio privato: "[Privato da X]: testo"
-    const privMatch = text.match(/^\[Privato da (.+?)\]:\s?([\s\S]*)$/);
-    if (privMatch) {
-        addChatMessage(privMatch[1], privMatch[2], { mine: false, priv: true });
-        return;
-    }
-
-    // 3) Messaggi di sistema
-    if (
-        /^Benvenuto nella stanza/.test(text) ||
-        /è entrato nella stanza/.test(text) ||
-        /ha lasciato la stanza/.test(text) ||
-        /^Utente '.*' non trovato/.test(text) ||
-        /^Uso: \/msg/.test(text) ||
-        /^Stanza non trovata/.test(text)
-    ) {
-        addSystemMessage(text);
-        if (/entrato nella stanza|ha lasciato la stanza/.test(text)) {
-            socket.emit("send_message", { text: "/list" });
-        }
-        return;
-    }
-
-    // 4) Messaggio normale: "username: testo"
-    const normalMatch = text.match(/^(.+?):\s([\s\S]*)$/);
-    if (normalMatch) {
-        addChatMessage(normalMatch[1], normalMatch[2], { mine: false, priv: false });
-        return;
-    }
-
-    // 5) Qualsiasi altra cosa -> sistema
-    addSystemMessage(text);
-}
-
-// ===================== RENDERING =====================
+// ===================== RENDERING MESSAGGI =====================
 function addChatMessage(author, body, { mine, priv }) {
     const wrap = document.createElement("div");
     wrap.className = "msg";
@@ -342,6 +346,24 @@ function addSystemMessage(text, isError = false) {
     const el = document.createElement("div");
     el.className = "msg-system";
     if (isError) el.classList.add("is-error");
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    scrollToBottom();
+}
+
+function addWinMessage(text) {
+    // messaggio speciale stile banner per la vittoria
+    const el = document.createElement("div");
+    el.className = "msg-system msg-win";
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    scrollToBottom();
+}
+
+function addLoseMessage(text) {
+    // messaggio speciale stile banner per la sconfitta
+    const el = document.createElement("div");
+    el.className = "msg-system msg-lose";
     el.textContent = text;
     messagesEl.appendChild(el);
     scrollToBottom();
@@ -404,13 +426,7 @@ function scrollToBottom() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// ===================== COMANDI CHAT =====================
-const COMMANDS = [
-    { name: "/msg", args: " ", desc: "Messaggio privato a un utente", template: "/msg " },
-    { name: "/list", args: "", desc: "Mostra gli utenti nella stanza", template: "/list" },
-    { name: "/quit", args: "", desc: "Esci dalla chat", template: "/quit" },
-];
-
+// ===================== AUTOCOMPLETAMENTO COMANDI =====================
 function getMsgPickerFilter(text) {
     if (!text.startsWith("/msg")) return null;
     const rest = text.slice(4);
@@ -551,9 +567,8 @@ function setActive(idx) {
     pickerItems.forEach((el) => el.classList.remove("is-active"));
     if (pickerItems.length === 0) { activeIndex = -1; return; }
     activeIndex = (idx + pickerItems.length) % pickerItems.length;
-    const el = pickerItems[activeIndex];
-    el.classList.add("is-active");
-    el.scrollIntoView({ block: "nearest" });
+    pickerItems[activeIndex].classList.add("is-active");
+    pickerItems[activeIndex].scrollIntoView({ block: "nearest" });
 }
 
 function hideAllPickers() {
@@ -581,7 +596,7 @@ messageInput.addEventListener("keydown", (e) => {
 
 messageInput.addEventListener("blur", () => { setTimeout(hideAllPickers, 150); });
 
-// ===================== INVIO MESSAGGI CHAT =====================
+// ===================== INVIO MESSAGGI =====================
 messageForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = messageInput.value.trim();
@@ -595,6 +610,23 @@ messageForm.addEventListener("submit", (e) => {
 
     if (text === "/list") {
         wantListEcho = true;
+        socket.emit("send_message", { text });
+        messageInput.value = "";
+        hideAllPickers();
+        return;
+    }
+
+    // /game — avvia partita, lo mostro anche in chat come mia azione
+    if (text === "/game") {
+        addSystemMessage("Stai avviando una partita di Tris…");
+        socket.emit("send_message", { text });
+        messageInput.value = "";
+        hideAllPickers();
+        return;
+    }
+
+    // /mossa N — mossa nel tris
+    if (text.startsWith("/mossa ")) {
         socket.emit("send_message", { text });
         messageInput.value = "";
         hideAllPickers();
@@ -617,6 +649,7 @@ messageForm.addEventListener("submit", (e) => {
         return;
     }
 
+    // messaggio normale: eco locale + invio
     addChatMessage(myName, text, { mine: true, priv: false });
     socket.emit("send_message", { text });
     messageInput.value = "";
@@ -628,15 +661,16 @@ cmdListBtn.addEventListener("click", () => {
     socket.emit("send_message", { text: "/list" });
 });
 
+cmdGameBtn.addEventListener("click", () => {
+    addSystemMessage("Stai avviando una partita di Tris…");
+    socket.emit("send_message", { text: "/game" });
+});
+
 refreshUsersBtn.addEventListener("click", () => {
     socket.emit("send_message", { text: "/list" });
 });
 
 leaveBtn.addEventListener("click", () => {
-    if (currentMode === "tris") {
-        location.reload();
-    } else {
-        socket.emit("send_message", { text: "/quit" });
-        location.reload();
-    }
+    socket.emit("send_message", { text: "/quit" });
+    location.reload();
 });

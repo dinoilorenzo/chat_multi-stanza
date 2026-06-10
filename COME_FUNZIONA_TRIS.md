@@ -1,65 +1,43 @@
-# Come Funziona il Gioco Tris Multiplayer
+# Come Funziona il Gioco Tris Multi-Stanza
 
-Questo documento spiega come è costruito e come funziona il sistema di gioco Tris multiplayer via socket TCP, e come si collega all'interfaccia web.
-
----
-
-## Struttura del Progetto
-
-| File                        | Ruolo                                                    |
-|-----------------------------|----------------------------------------------------------|
-| `server_tris.py`            | Il server TCP che gestisce tutta la logica di gioco      |
-| `client_tris.py`            | Client da terminale (alternativo alla UI web)            |
-| `server.py`                 | Il server TCP per la chat multi-stanza (porta 5555)      |
-| `web_gateway.py`            | Gateway Flask/WebSocket che fa da ponte verso entrambi i server |
-| `templates/index.html`      | Pagina HTML con selettore modalità e scacchiera grafica  |
-| `static/js/app.js`          | Logica del client web (Chat e Tris)                      |
-| `static/css/style.css`      | Stili dell'interfaccia web                               |
+Il Tris è integrato direttamente nella chat multi-stanza. Non è un'applicazione separata: gli utenti entrano in una stanza, chattano, e quando vogliono avviano una partita con il comando `/game` — tutto nello stesso posto.
 
 ---
 
-## Architettura Generale: Client-Server + Web UI
+## Struttura dei File Coinvolti
 
-Il sistema usa una architettura **Client-Server** classica. I due giocatori **non comunicano mai direttamente tra loro**: tutto passa obbligatoriamente attraverso il server.
+| File | Ruolo |
+|---|---|
+| `server.py` | Gestisce sia la chat che la logica del Tris |
+| `client.py` | Client da terminale per chat + Tris |
+| `web_gateway.py` | Gateway che fa da ponte tra browser e server.py |
+| `static/js/app.js` | Mostra la scacchiera nel browser e invia le mosse |
 
-**Da terminale** (senza UI):
-```
-client_tris.py ──── TCP 5556 ────→ server_tris.py
-client_tris.py ──── TCP 5556 ────→ server_tris.py
-```
-
-**Tramite interfaccia web** (con UI):
-```
-Browser A ──WebSocket──→ web_gateway.py ──TCP 5556──→ server_tris.py
-Browser B ──WebSocket──→ web_gateway.py ──TCP 5556──→ server_tris.py
-```
-
-Il gateway (`web_gateway.py`) fa da **ponte (bridge)**: apre una connessione TCP verso `server_tris.py` per conto di ogni giocatore connesso dal browser, e usa WebSocket per comunicare con il browser in tempo reale.
-
-Il server fa da **arbitro**: riceve la mossa da un giocatore, la valida, aggiorna la scacchiera e invia gli aggiornamenti a entrambi.
+> `server_tris.py` e `client_tris.py` sono versioni standalone del solo Tris, utili per testare il gioco in isolamento su porta 5556.
 
 ---
 
 ## Come Funziona: Passo per Passo
 
-### 1. Connessione e accesso al tavolo
-Quando un client si avvia, fa due cose:
-1. Invia il proprio **username** al server.
-2. Invia il nome del **tavolo** a cui vuole unirsi (es. "Tavolo-1").
+### 1. Entrata in stanza
+Gli utenti entrano in una stanza (via terminale o browser). Possono chattare liberamente.
 
-Il server riceve queste informazioni e aggiunge il giocatore al tavolo scelto.
+### 2. Avvio della partita (`/game`)
 
-- Se il tavolo **non esiste**, il server lo crea automaticamente.
-- Se il tavolo è già **pieno (2 giocatori)**, il server rifiuta la connessione.
-- Se nel tavolo c'è già **1 giocatore**, il server aspetta il secondo.
-- Quando arrivano **2 giocatori**, la partita inizia automaticamente.
+Quando un utente digita `/game`:
+- Il server verifica che non ci sia già una partita in corso nella stanza
+- Il server verifica che ci siano almeno 2 utenti nella stanza
+- Prende i **primi 2 utenti** come giocatori: il primo diventa X, il secondo O
+- Inizializza la scacchiera (9 celle vuote) e la manda a **tutti** nella stanza
+- Manda "Tocca a te per primo!" solo al giocatore X (Point-to-Point)
+- Manda "Aspetta il tuo turno" solo al giocatore O (Point-to-Point)
 
-### 2. Avvio della partita
-Il server assegna i simboli:
-- Il **primo** giocatore entrato nel tavolo → **X** (gioca per primo)
-- Il **secondo** giocatore entrato → **O** (aspetta il suo turno)
+Gli altri utenti nella stanza (spettatori) ricevono la scacchiera e gli aggiornamenti ma non possono giocare.
 
-Il server invia a entrambi la scacchiera iniziale (vuota) e il numero delle celle (da 1 a 9):
+### 3. Fare una mossa (`/mossa N`)
+
+Il giocatore di turno invia `/mossa N` (con N da 1 a 9, che corrisponde alle celle della scacchiera):
+
 ```
  1 | 2 | 3
 ---+---+---
@@ -68,145 +46,115 @@ Il server invia a entrambi la scacchiera iniziale (vuota) e il numero delle cell
  7 | 8 | 9
 ```
 
-### 3. Una mossa
-Il giocatore il cui turno è attivo invia al server il comando:
-```
-/mossa N
-```
-dove N è un numero da 1 a 9.
-
 Il server controlla:
 - È il turno di questo giocatore?
-- La cella N esiste? (da 1 a 9)
-- La cella N è libera?
+- Il numero è valido (1-9)?
+- La cella è libera?
 
-Se tutto è ok, il server aggiorna la scacchiera e la manda ad entrambi i giocatori. Se c'è un errore, risponde solo al giocatore che ha sbagliato.
+Se tutto è ok: aggiorna la scacchiera e la manda a **tutti nella stanza**. Poi controlla vincitore e pareggio.
 
 ### 4. Fine partita
-Dopo ogni mossa il server controlla se:
-- C'è un **vincitore** (tre X o tre O in riga, colonna o diagonale)
-- È **pareggio** (tutte le 9 celle occupate senza vincitore)
 
-Se la partita finisce, il server lo comunica a entrambi i giocatori e fa partire automaticamente una **nuova partita**.
+Se c'è un vincitore o pareggio:
 
----
+| Messaggio | Destinatario | Modello |
+|---|---|---|
+| "🏆 HAI VINTO! Complimenti..." | Solo al vincitore | **Point-to-Point** |
+| "😞 HAI PERSO! ..." | Solo al perdente | **Point-to-Point** |
+| "=== X ha vinto la partita ===" | Tutta la stanza | **Multicast** |
+| "Potete continuare a chattare..." | Tutta la stanza | **Multicast** |
 
-## I Modelli di Comunicazione Usati
-
-Questo sistema usa **tre diversi modelli di comunicazione** a seconda della situazione:
-
-### 1. Point-to-Point (Unicast)
-Un messaggio viene inviato **solo a uno specifico giocatore**.
-
-**Quando viene usato:**
-- Quando un giocatore prova a muovere ma **non è il suo turno** → il server avvisa solo lui.
-- Quando un giocatore sceglie una **cella già occupata** → il server avvisa solo lui.
-- Quando tocca a un giocatore → il server manda "Tocca a te!" solo a lui.
-
-```
-Server ──────────────────→ Giocatore 1 (solo lui)
-              "Non è il tuo turno!"
-```
-
-### 2. Broadcast sul Tavolo (Multicast Applicativo)
-Un messaggio viene inviato **a entrambi i giocatori del tavolo**.
-
-**Quando viene usato:**
-- Dopo ogni mossa valida: il server manda la **scacchiera aggiornata** a tutti e due.
-- Quando la partita finisce: il server annuncia il **vincitore o il pareggio** a tutti e due.
-- Quando un giocatore si disconnette: il server avvisa l'**altro giocatore**.
-
-```
-Server ──────────────────→ Giocatore 1
-         (scacchiera)  └──→ Giocatore 2
-```
-
-> **Nota:** Questo è chiamato "Multicast Applicativo" perché la logica di invio a un gruppo è gestita dal codice Python del server (ciclo `for` sui socket del tavolo), non dal protocollo di rete.
-
-### 3. Publish-Subscribe (Pub-Sub)
-I **tavoli** si comportano come "topic" di un sistema Pub-Sub.
-
-- I giocatori si **iscrivono** (`subscribe`) a un tavolo quando vi entrano.
-- Il server fa da **broker**: riceve gli eventi (le mosse) e li distribuisce agli iscritti di quel topic.
-- Un giocatore riceve solo i messaggi del **proprio tavolo**, non quelli degli altri tavoli.
-
-```
-Tavolo-1 (topic)         Tavolo-2 (topic)
-   ├── Giocatore A           ├── Giocatore C
-   └── Giocatore B           └── Giocatore D
-
-A e B non ricevono i messaggi di Tavolo-2 e viceversa.
-```
+Dopo la partita:
+- Il dizionario `partite` viene svuotato per quella stanza
+- Gli utenti possono chattare normalmente
+- È possibile usare `/game` per una nuova partita
 
 ---
 
-## Riepilogo: Quale modello per quale situazione
+## I Modelli di Comunicazione nel Tris
 
-| Situazione                        | Modello usato          | Destinatario         |
-|-----------------------------------|------------------------|----------------------|
-| "Non è il tuo turno"              | Point-to-Point         | 1 giocatore          |
-| "Cella già occupata"              | Point-to-Point         | 1 giocatore          |
-| "Tocca a te!"                     | Point-to-Point         | 1 giocatore          |
-| Scacchiera aggiornata dopo mossa  | Multicast sul tavolo   | 2 giocatori          |
-| Annuncio vincitore / pareggio     | Multicast sul tavolo   | 2 giocatori          |
-| Avversario disconnesso            | Multicast sul tavolo   | 2 giocatori          |
-| Iscrizione a un tavolo            | Publish-Subscribe      | Iscritti al topic    |
+### Point-to-Point (Unicast)
+Messaggi che vanno **solo a un giocatore**:
+- "Tocca a te!" → solo al giocatore di turno
+- "Non è il tuo turno!" → solo a chi ha sbagliato
+- "Cella già occupata!" → solo a chi ha sbagliato
+- "HAI VINTO!" → solo al vincitore
+- "HAI PERSO!" → solo al perdente
+
+```
+server.py ───────────────────→ Giocatore A (solo lui)
+               "HAI VINTO!"
+```
+
+### Multicast Applicativo
+Messaggi che vanno **a tutti nella stanza** (giocatori e spettatori):
+- Scacchiera aggiornata dopo ogni mossa
+- Annuncio inizio partita
+- Annuncio vincitore o pareggio
+- Notifica se un giocatore si disconnette durante la partita
+
+```
+server.py ───────────────────→ Giocatore A
+          (scacchiera)  ├────→ Giocatore B
+                        └────→ Spettatore C
+```
+
+### Publish-Subscribe (Pub-Sub)
+Le stanze sono "topic": ogni utente riceve solo gli aggiornamenti della stanza in cui si trova.
+
+```
+Stanza "sala-1" (topic) → Mario, Luigi, Peach
+Stanza "sala-2" (topic) → Carlo, Daisy
+
+Mario non riceve le partite di "sala-2".
+```
 
 ---
 
-## Strutture Dati usate nel Server
-
-Il server tiene tutto in memoria usando semplici dizionari Python:
+## Struttura del Dizionario `partite` nel Server
 
 ```python
-tavoli          = {}  # nome_tavolo  → lista dei 2 socket dei giocatori
-giocatori       = {}  # socket       → username del giocatore
-giocatore_tavolo = {} # socket       → nome del tavolo in cui si trova
-scacchiere      = {}  # nome_tavolo  → lista di 9 celle (" ", "X", "O")
-turno_di        = {}  # nome_tavolo  → socket del giocatore che deve muovere
+partite = {
+    "sala-1": {
+        "board":    [" ", "X", " ", "O", " ", " ", " ", " ", " "],
+        "turno":    <socket_di_Mario>,
+        "giocatori":[<socket_di_Mario>, <socket_di_Luigi>],
+        "simboli":  {<socket_di_Mario>: "X", <socket_di_Luigi>: "O"}
+    }
+}
 ```
 
 ---
 
-## Ruolo del Gateway Web
+## Come Avviare il Tris
 
-`web_gateway.py` fa da **intermediario** tra il browser e i server TCP. Ha due dizionari separati:
+### Da terminale
 
-```python
-bridges      = {}  # sid → bridge verso server.py      (chat, porta 5555)
-tris_bridges = {}  # sid → bridge verso server_tris.py (tris, porta 5556)
-```
-
-Quando il browser clicca su una cella della scacchiera, invia un evento WebSocket `tris_move` con il numero della cella. Il gateway lo converte in `/mossa N` e lo manda via TCP a `server_tris.py`. La risposta del server (la scacchiera aggiornata come testo ASCII) viene ricevuta dal bridge e rimandata al browser via WebSocket come evento `message`. Il browser (in `app.js`) interpreta il testo e aggiorna graficamente la scacchiera.
-
----
-
-## Come si Avvia
-
-**Con terminale (senza UI):**
 ```bash
-# Terminale 1 - avvia il server
-python3 server_tris.py
-
-# Terminale 2 - primo giocatore
-python3 client_tris.py
-
-# Terminale 3 - secondo giocatore
-python3 client_tris.py
-```
-
-**Con interfaccia web:**
-```bash
-# Terminale 1 - server chat
+# Terminale 1 - avvia il server unificato
 python3 server.py
 
-# Terminale 2 - server tris
-python3 server_tris.py
+# Terminale 2 - primo giocatore
+python3 client.py
+# → username: Mario
+# → stanza: sala-1
 
-# Terminale 3 - gateway web
+# Terminale 3 - secondo giocatore
+python3 client.py
+# → username: Luigi
+# → stanza: sala-1
+
+# Da uno dei due terminali:
+/game       ← avvia la partita
+/mossa 5    ← gioca nella cella centrale
+```
+
+### Con interfaccia web
+
+```bash
+python3 server.py
 ./venv/bin/python3 web_gateway.py
-
-# Poi apri due schede del browser su http://127.0.0.1:8000
-# Seleziona "Tris", inserisci username e nome del tavolo
-# Quando entrano 2 giocatori, la partita parte automaticamente!
+# apri http://127.0.0.1:8000 in due schede, stessa stanza
+# clicca 🎮 o digita /game per avviare
+# clicca direttamente sulle celle per giocare
 ```
