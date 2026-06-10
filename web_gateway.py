@@ -1,16 +1,12 @@
 """
-Gateway Web per la Chat Multi-Stanza.
+Gateway Web — Chat + Tris Multiplayer.
 
-Questo modulo NON reimplementa la logica della chat: fa da ponte (bridge) tra
-il browser e il server TCP esistente (server.py).
+Fa da ponte tra il browser e due server TCP:
+  - server.py      (porta 5555) per la chat multi-stanza
+  - server_tris.py (porta 5556) per il gioco del Tris
 
   Browser  <--WebSocket-->  web_gateway.py  <--TCP-->  server.py
-
-Per ogni client web viene aperta una connessione TCP verso server.py,
-rispettando lo stesso identico protocollo del client.py originale:
-  1) invia l'username
-  2) invia il nome della stanza
-  3) scambia messaggi di testo e comandi (/msg, /list, /quit)
+                                            <--TCP-->  server_tris.py
 """
 
 import socket
@@ -20,9 +16,12 @@ import time
 from flask import Flask, render_template
 from flask_socketio import SocketIO
 
-# indirizzo e porta del server TCP esistente (lo stesso di server.py / client.py)
+# indirizzo del server chat (server.py)
 TCP_HOST = "127.0.0.1"
 TCP_PORT = 5555
+
+# indirizzo del server tris (server_tris.py)
+TRIS_PORT = 5556
 
 # host e porta su cui gira l'interfaccia web
 WEB_HOST = "127.0.0.1"
@@ -44,8 +43,11 @@ def add_no_cache_headers(response):
     response.headers["Expires"] = "0"
     return response
 
-# mappa: session id del browser -> connessione TCP verso server.py
+# mappa: session id del browser -> bridge verso server.py (chat)
 bridges = {}
+
+# mappa: session id del browser -> bridge verso server_tris.py (tris)
+tris_bridges = {}
 
 
 class Bridge:
@@ -184,7 +186,84 @@ def handle_disconnect():
         bridge.close()
 
 
+@socketio.on("join_tris")
+def handle_join_tris(data):
+    """Il browser vuole giocare a Tris: apro un ponte TCP verso server_tris.py."""
+    from flask import request
+
+    sid = request.sid
+    username = (data.get("username") or "").strip()
+    tavolo = (data.get("room") or "").strip()
+
+    if not username or not tavolo:
+        socketio.emit("error_msg", {"text": "Username e tavolo sono obbligatori."}, to=sid)
+        return
+
+    # chiudo un eventuale bridge tris precedente
+    old = tris_bridges.pop(sid, None)
+    if old:
+        old.close()
+
+    # creo il bridge verso server_tris.py (stessa struttura di Bridge ma porta diversa)
+    bridge = Bridge.__new__(Bridge)
+    bridge.sid = sid
+    bridge.username = username
+    bridge.room = tavolo
+    bridge.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    bridge.running = False
+
+    try:
+        bridge.sock.connect((TCP_HOST, TRIS_PORT))
+        bridge.sock.send(username.encode("utf-8"))
+        time.sleep(0.1)
+        bridge.sock.send(tavolo.encode("utf-8"))
+        bridge.running = True
+        thread = threading.Thread(target=bridge._listen, daemon=True)
+        thread.start()
+    except Exception:
+        socketio.emit(
+            "error_msg",
+            {"text": "Impossibile connettersi al server Tris. E' avviato (python server_tris.py)?"},
+            to=sid,
+        )
+        return
+
+    tris_bridges[sid] = bridge
+    socketio.emit("joined", {"username": username, "room": tavolo, "mode": "tris"}, to=sid)
+
+
+@socketio.on("tris_move")
+def handle_tris_move(data):
+    """Il browser invia una mossa del tris: la inoltro a server_tris.py."""
+    from flask import request
+
+    sid = request.sid
+    bridge = tris_bridges.get(sid)
+    if not bridge:
+        return
+
+    # numero della cella cliccata (1-9)
+    numero = data.get("cell")
+    if numero is not None:
+        bridge.send(f"/mossa {numero}")
+
+
+@socketio.on("disconnect")
+def handle_disconnect_tris():
+    """Quando il browser si disconnette, chiudo entrambi i bridge se esistono."""
+    from flask import request
+
+    sid = request.sid
+    bridge = bridges.pop(sid, None)
+    if bridge:
+        bridge.close()
+    tris_bridge = tris_bridges.pop(sid, None)
+    if tris_bridge:
+        tris_bridge.close()
+
+
 if __name__ == "__main__":
     print(f"Interfaccia web disponibile su http://{WEB_HOST}:{WEB_PORT}")
     print(f"(Assicurati che 'python server.py' sia in esecuzione su {TCP_HOST}:{TCP_PORT})")
+    print(f"(Per il Tris: 'python server_tris.py' su {TCP_HOST}:{TRIS_PORT})")
     socketio.run(app, host=WEB_HOST, port=WEB_PORT, allow_unsafe_werkzeug=True)

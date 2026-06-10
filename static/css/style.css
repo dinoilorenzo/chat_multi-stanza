@@ -697,3 +697,91 @@ body {
         max-width: 85%;
     }
 }
+
+/* ======================= SELETTORE MODALITÀ ======================= */
+.mode-selector {
+    display: flex;
+    gap: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px;
+}
+
+.mode-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.18s;
+}
+
+.mode-btn.is-active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+}
+
+/* ======================= SCACCHIERA TRIS ======================= */
+.tris-board {
+    padding: 24px 22px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.tris-status {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-align: center;
+}
+
+.tris-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 90px);
+    grid-template-rows: repeat(3, 90px);
+    gap: 8px;
+}
+
+.tris-cell {
+    width: 90px;
+    height: 90px;
+    background: var(--bg-elev-2);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    font-family: inherit;
+}
+
+.tris-cell:hover:not(:disabled) {
+    background: var(--bg-elev);
+    border-color: var(--accent);
+    transform: scale(1.04);
+}
+
+.tris-cell:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.tris-cell.x {
+    color: var(--accent);
+    border-color: rgba(99, 102, 241, 0.4);
+}
+
+.tris-cell.o {
+    color: #ec4899;
+    border-color: rgba(236, 72, 153, 0.4);
+}

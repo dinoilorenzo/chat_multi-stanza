@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Multi-Stanza</title>
+    <title>Chat & Tris Multi-Stanza</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -17,32 +17,38 @@
                 <span class="logo-dot"></span>
                 <span class="logo-dot"></span>
             </div>
-            <h1 class="login-title">Chat Multi-Stanza</h1>
-            <p class="login-subtitle">Entra in una stanza e inizia a chattare</p>
+            <h1 class="login-title">Chat & Tris</h1>
+            <p class="login-subtitle">Scegli la modalità ed entra in una stanza</p>
 
             <form id="login-form" class="login-form" autocomplete="off">
+                <!-- selettore modalità: Chat oppure Tris -->
+                <div class="mode-selector">
+                    <button type="button" id="mode-chat" class="mode-btn is-active">💬 Chat</button>
+                    <button type="button" id="mode-tris" class="mode-btn">❌ Tris</button>
+                </div>
+
                 <label class="field">
                     <span class="field-label">Username</span>
                     <input id="username-input" type="text" placeholder="es. Mario" maxlength="24" required>
                 </label>
                 <label class="field">
-                    <span class="field-label">Stanza</span>
+                    <span class="field-label" id="room-label">Stanza</span>
                     <input id="room-input" type="text" placeholder="es. generale" maxlength="32" required>
                 </label>
-                <button type="submit" class="btn-primary">Entra nella chat</button>
+                <button type="submit" class="btn-primary" id="enter-btn">Entra nella chat</button>
                 <p id="login-error" class="login-error" hidden></p>
             </form>
         </div>
-        <footer class="login-footer">Powered by server.py · TCP 127.0.0.1:5555</footer>
+        <footer class="login-footer">Chat → server.py:5555 · Tris → server_tris.py:5556</footer>
     </section>
 
-    <!-- ===================== SCHERMATA DI CHAT ===================== -->
+    <!-- ===================== SCHERMATA DI CHAT / TRIS ===================== -->
     <section id="chat-screen" class="chat-screen" hidden>
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="room-badge">#</div>
+                <div class="room-badge" id="room-badge">#</div>
                 <div class="room-info">
-                    <span class="room-label">Stanza</span>
+                    <span class="room-label" id="mode-label">Stanza</span>
                     <span id="room-name" class="room-name">—</span>
                 </div>
             </div>
@@ -72,8 +78,26 @@
                 </div>
             </header>
 
+            <!-- ===== SCACCHIERA DEL TRIS (visibile solo in modalità tris) ===== -->
+            <div id="tris-board" class="tris-board" hidden>
+                <p id="tris-status" class="tris-status">In attesa dell'avversario…</p>
+                <div class="tris-grid">
+                    <button class="tris-cell" data-cell="1"></button>
+                    <button class="tris-cell" data-cell="2"></button>
+                    <button class="tris-cell" data-cell="3"></button>
+                    <button class="tris-cell" data-cell="4"></button>
+                    <button class="tris-cell" data-cell="5"></button>
+                    <button class="tris-cell" data-cell="6"></button>
+                    <button class="tris-cell" data-cell="7"></button>
+                    <button class="tris-cell" data-cell="8"></button>
+                    <button class="tris-cell" data-cell="9"></button>
+                </div>
+            </div>
+
+            <!-- ===== LOG DEI MESSAGGI (usato sia in chat che in tris per gli eventi) ===== -->
             <div id="messages" class="messages"></div>
 
+            <!-- ===== COMPOSER (visibile solo in modalità chat) ===== -->
             <form id="message-form" class="composer" autocomplete="off">
                 <button type="button" id="cmd-list" class="composer-cmd" title="Lista utenti (/list)">/list</button>
                 <div class="composer-field">

@@ -1,32 +1,40 @@
 # Come Funziona il Gioco Tris Multiplayer
 
-Questo documento spiega come è costruito e come funziona il sistema di gioco Tris multiplayer via socket TCP.
+Questo documento spiega come è costruito e come funziona il sistema di gioco Tris multiplayer via socket TCP, e come si collega all'interfaccia web.
 
 ---
 
 ## Struttura del Progetto
 
-| File              | Ruolo                                      |
-|-------------------|--------------------------------------------|
-| `server_tris.py`  | Il server centrale che gestisce tutto il gioco |
-| `client_tris.py`  | Il client da terminale per ogni giocatore  |
+| File                        | Ruolo                                                    |
+|-----------------------------|----------------------------------------------------------|
+| `server_tris.py`            | Il server TCP che gestisce tutta la logica di gioco      |
+| `client_tris.py`            | Client da terminale (alternativo alla UI web)            |
+| `server.py`                 | Il server TCP per la chat multi-stanza (porta 5555)      |
+| `web_gateway.py`            | Gateway Flask/WebSocket che fa da ponte verso entrambi i server |
+| `templates/index.html`      | Pagina HTML con selettore modalità e scacchiera grafica  |
+| `static/js/app.js`          | Logica del client web (Chat e Tris)                      |
+| `static/css/style.css`      | Stili dell'interfaccia web                               |
 
 ---
 
-## Architettura Generale: Client-Server
+## Architettura Generale: Client-Server + Web UI
 
 Il sistema usa una architettura **Client-Server** classica. I due giocatori **non comunicano mai direttamente tra loro**: tutto passa obbligatoriamente attraverso il server.
 
+**Da terminale** (senza UI):
 ```
-Giocatore 1                    Giocatore 2
-(client_tris.py)               (client_tris.py)
-      |                               |
-      |------- TCP socket ----------> |
-      |         SERVER                |
-      |      (server_tris.py)         |
-      |         porta 5556            |
-      | <------ TCP socket ---------- |
+client_tris.py ──── TCP 5556 ────→ server_tris.py
+client_tris.py ──── TCP 5556 ────→ server_tris.py
 ```
+
+**Tramite interfaccia web** (con UI):
+```
+Browser A ──WebSocket──→ web_gateway.py ──TCP 5556──→ server_tris.py
+Browser B ──WebSocket──→ web_gateway.py ──TCP 5556──→ server_tris.py
+```
+
+Il gateway (`web_gateway.py`) fa da **ponte (bridge)**: apre una connessione TCP verso `server_tris.py` per conto di ogni giocatore connesso dal browser, e usa WebSocket per comunicare con il browser in tempo reale.
 
 Il server fa da **arbitro**: riceve la mossa da un giocatore, la valida, aggiorna la scacchiera e invia gli aggiornamenti a entrambi.
 
@@ -160,21 +168,45 @@ turno_di        = {}  # nome_tavolo  → socket del giocatore che deve muovere
 
 ---
 
+## Ruolo del Gateway Web
+
+`web_gateway.py` fa da **intermediario** tra il browser e i server TCP. Ha due dizionari separati:
+
+```python
+bridges      = {}  # sid → bridge verso server.py      (chat, porta 5555)
+tris_bridges = {}  # sid → bridge verso server_tris.py (tris, porta 5556)
+```
+
+Quando il browser clicca su una cella della scacchiera, invia un evento WebSocket `tris_move` con il numero della cella. Il gateway lo converte in `/mossa N` e lo manda via TCP a `server_tris.py`. La risposta del server (la scacchiera aggiornata come testo ASCII) viene ricevuta dal bridge e rimandata al browser via WebSocket come evento `message`. Il browser (in `app.js`) interpreta il testo e aggiorna graficamente la scacchiera.
+
+---
+
 ## Come si Avvia
 
-```
+**Con terminale (senza UI):**
+```bash
 # Terminale 1 - avvia il server
 python3 server_tris.py
 
 # Terminale 2 - primo giocatore
 python3 client_tris.py
-→ Nome: Mario
-→ Tavolo: Tavolo-1
 
 # Terminale 3 - secondo giocatore
 python3 client_tris.py
-→ Nome: Luigi
-→ Tavolo: Tavolo-1
+```
 
-# Quando Luigi entra, la partita parte automaticamente!
+**Con interfaccia web:**
+```bash
+# Terminale 1 - server chat
+python3 server.py
+
+# Terminale 2 - server tris
+python3 server_tris.py
+
+# Terminale 3 - gateway web
+./venv/bin/python3 web_gateway.py
+
+# Poi apri due schede del browser su http://127.0.0.1:8000
+# Seleziona "Tris", inserisci username e nome del tavolo
+# Quando entrano 2 giocatori, la partita parte automaticamente!
 ```

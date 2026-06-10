@@ -1,6 +1,5 @@
-// Client web della Chat Multi-Stanza.
-// Comunica col gateway (web_gateway.py) via Socket.IO; il gateway fa da ponte
-// verso il server TCP esistente (server.py).
+// Client web — Chat Multi-Stanza + Tris Multiplayer.
+// Comunica col gateway (web_gateway.py) via Socket.IO.
 
 const socket = io();
 
@@ -9,59 +8,66 @@ let myName = "";
 let myRoom = "";
 let roomUsers = [];
 let wantListEcho = false;
+let currentMode = "chat";   // "chat" oppure "tris"
+let mySymbol = "";           // "X" oppure "O" (solo in modalità tris)
+let isMyTurn = false;        // true se tocca a me muovere
 
 // --- Riferimenti DOM ---
-const loginScreen = document.getElementById("login-screen");
-const chatScreen = document.getElementById("chat-screen");
-const loginForm = document.getElementById("login-form");
-const usernameInput = document.getElementById("username-input");
-const roomInput = document.getElementById("room-input");
-const loginError = document.getElementById("login-error");
+const loginScreen    = document.getElementById("login-screen");
+const chatScreen     = document.getElementById("chat-screen");
+const loginForm      = document.getElementById("login-form");
+const usernameInput  = document.getElementById("username-input");
+const roomInput      = document.getElementById("room-input");
+const loginError     = document.getElementById("login-error");
+const enterBtn       = document.getElementById("enter-btn");
+const roomLabelEl    = document.getElementById("room-label");
 
-const roomNameEl = document.getElementById("room-name");
-const topbarRoomEl = document.getElementById("topbar-room");
-const myNameEl = document.getElementById("my-name");
-const myAvatarEl = document.getElementById("my-avatar");
-const usersListEl = document.getElementById("users-list");
-const usersTitleEl = document.getElementById("users-title");
+// selettore modalità
+const modeChatBtn = document.getElementById("mode-chat");
+const modeTrisBtn = document.getElementById("mode-tris");
 
-const messagesEl = document.getElementById("messages");
-const messageForm = document.getElementById("message-form");
-const messageInput = document.getElementById("message-input");
+// schermata chat
+const roomNameEl    = document.getElementById("room-name");
+const roomBadgeEl   = document.getElementById("room-badge");
+const modeLabelEl   = document.getElementById("mode-label");
+const topbarRoomEl  = document.getElementById("topbar-room");
+const myNameEl      = document.getElementById("my-name");
+const myAvatarEl    = document.getElementById("my-avatar");
+const usersListEl   = document.getElementById("users-list");
+const usersTitleEl  = document.getElementById("users-title");
+
+const messagesEl    = document.getElementById("messages");
+const messageForm   = document.getElementById("message-form");
+const messageInput  = document.getElementById("message-input");
 const msgUserPicker = document.getElementById("msg-user-picker");
-const cmdPicker = document.getElementById("cmd-picker");
-const cmdListBtn = document.getElementById("cmd-list");
-
-// Comandi disponibili, mostrati quando l'utente digita "/".
-const COMMANDS = [
-    { name: "/msg", args: " ", desc: "Messaggio privato a un utente", template: "/msg " },
-    { name: "/list", args: "", desc: "Mostra gli utenti nella stanza", template: "/list" },
-    { name: "/quit", args: "", desc: "Esci dalla chat", template: "/quit" },
-];
+const cmdPicker     = document.getElementById("cmd-picker");
+const cmdListBtn    = document.getElementById("cmd-list");
 const refreshUsersBtn = document.getElementById("refresh-users");
-const leaveBtn = document.getElementById("leave-btn");
+const leaveBtn      = document.getElementById("leave-btn");
 
-// Palette per gli avatar, derivata dal nome utente.
-const AVATAR_COLORS = [
-    "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b",
-    "#22c55e", "#06b6d4", "#ef4444", "#14b8a6",
-];
+// scacchiera tris
+const trisBoard  = document.getElementById("tris-board");
+const trisStatus = document.getElementById("tris-status");
+const trisCells  = document.querySelectorAll(".tris-cell");
 
-function colorFor(name) {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
+// ===================== SELETTORE MODALITÀ =====================
+modeChatBtn.addEventListener("click", () => {
+    currentMode = "chat";
+    modeChatBtn.classList.add("is-active");
+    modeTrisBtn.classList.remove("is-active");
+    roomLabelEl.textContent = "Stanza";
+    roomInput.placeholder = "es. generale";
+    enterBtn.textContent = "Entra nella chat";
+});
 
-function initials(name) {
-    return (name.trim()[0] || "?").toUpperCase();
-}
-
-function scrollToBottom() {
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-}
+modeTrisBtn.addEventListener("click", () => {
+    currentMode = "tris";
+    modeTrisBtn.classList.add("is-active");
+    modeChatBtn.classList.remove("is-active");
+    roomLabelEl.textContent = "Tavolo";
+    roomInput.placeholder = "es. Tavolo-1";
+    enterBtn.textContent = "Entra nella partita";
+});
 
 // ===================== INVIO HANDSHAKE =====================
 loginForm.addEventListener("submit", (e) => {
@@ -72,11 +78,17 @@ loginForm.addEventListener("submit", (e) => {
 
     myName = username;
     myRoom = room;
-    socket.emit("join", { username, room });
+
+    // invio l'evento giusto in base alla modalità scelta
+    if (currentMode === "tris") {
+        socket.emit("join_tris", { username, room });
+    } else {
+        socket.emit("join", { username, room });
+    }
 });
 
 // ===================== EVENTI DAL GATEWAY =====================
-socket.on("joined", ({ username, room }) => {
+socket.on("joined", ({ username, room, mode }) => {
     myName = username;
     myRoom = room;
 
@@ -88,10 +100,26 @@ socket.on("joined", ({ username, room }) => {
 
     loginScreen.hidden = true;
     chatScreen.hidden = false;
-    messageInput.focus();
 
-    // chiedo subito la lista utenti per popolare la sidebar
-    socket.emit("send_message", { text: "/list" });
+    // se la modalità è tris: mostro la scacchiera e nascondo il composer di chat
+    if (mode === "tris") {
+        currentMode = "tris";
+        trisBoard.hidden = false;
+        messageForm.hidden = true;
+        cmdListBtn.hidden = true;
+        roomBadgeEl.textContent = "❌";
+        modeLabelEl.textContent = "Tavolo";
+        trisStatus.textContent = "In attesa dell'avversario…";
+        resetBoard();
+    } else {
+        currentMode = "chat";
+        trisBoard.hidden = true;
+        messageForm.hidden = false;
+        roomBadgeEl.textContent = "#";
+        modeLabelEl.textContent = "Stanza";
+        messageInput.focus();
+        socket.emit("send_message", { text: "/list" });
+    }
 });
 
 socket.on("error_msg", ({ text }) => {
@@ -104,17 +132,134 @@ socket.on("server_closed", () => {
 });
 
 socket.on("message", ({ text }) => {
-    handleIncoming(text);
+    // il messaggio arriva sempre come stringa grezza dal server (chat o tris)
+    if (currentMode === "tris") {
+        handleTrisMessage(text);
+    } else {
+        handleIncoming(text);
+    }
 });
 
-// ===================== PARSING DEI MESSAGGI =====================
-// Il server.py invia testo grezzo: lo classifico per mostrarlo bene.
+// ===================== LOGICA TRIS =====================
+function resetBoard() {
+    // svuoto tutte le celle della scacchiera
+    trisCells.forEach((cell) => {
+        cell.textContent = "";
+        cell.className = "tris-cell";
+        cell.disabled = true;   // le disabilito finché non tocca a me
+    });
+    isMyTurn = false;
+}
+
+function handleTrisMessage(text) {
+    // il server tris manda messaggi di testo grezzo: li interpreto qui
+
+    // riga della scacchiera come " X | O |   " → aggiorno la cella corrispondente
+    // prima di tutto controllo se il testo contiene una scacchiera ASCII
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+    // cerco le tre righe di gioco (contengono "|")
+    const boardLines = lines.filter(l => l.match(/^\S+\s*\|\s*\S+\s*\|\s*\S+/));
+    if (boardLines.length === 3) {
+        // aggiorno la scacchiera grafica con i simboli estratti dalle righe
+        const symbols = [];
+        boardLines.forEach(line => {
+            // splitta per "|", e per ogni parte prende il simbolo (es. "X", "O" o " ")
+            line.split("|").forEach(part => {
+                const s = part.trim();
+                symbols.push(s === "" ? " " : s);
+            });
+        });
+        updateBoardUI(symbols);
+        return;
+    }
+
+    // "Tocca a te" → abilito i bottoni della scacchiera
+    if (/Tocca a te/i.test(text)) {
+        isMyTurn = true;
+        trisStatus.textContent = "🟢 Tocca a te! Clicca una cella.";
+        trisCells.forEach(cell => {
+            // abilito solo le celle ancora vuote
+            if (!cell.textContent) {
+                cell.disabled = false;
+            }
+        });
+        return;
+    }
+
+    // "Aspetta il tuo turno" o "Aspetta" → disabilito i bottoni
+    if (/Aspetta/i.test(text)) {
+        isMyTurn = false;
+        trisStatus.textContent = "⏳ Aspetta il turno dell'avversario…";
+        trisCells.forEach(cell => { cell.disabled = true; });
+        return;
+    }
+
+    // simbolo assegnato al giocatore: "Tu sei X" o "Tu sei O"
+    if (/Tu sei X/i.test(text)) {
+        mySymbol = "X";
+    } else if (/Tu sei O/i.test(text)) {
+        mySymbol = "O";
+    }
+
+    // partita vinta, persa o pareggio → messaggio di sistema
+    if (/ha vinto|Pareggio|Nuova partita|Partita iniziata|sei entrato/i.test(text)) {
+        addSystemMessage(text);
+        if (/Nuova partita/i.test(text)) {
+            // resetto la scacchiera per la prossima partita
+            resetBoard();
+        }
+        return;
+    }
+
+    // tutti gli altri messaggi (errori, avvisi) → log in chat
+    if (text.trim()) {
+        addSystemMessage(text);
+    }
+}
+
+function updateBoardUI(symbols) {
+    // symbols è un array di 9 elementi: " ", "X" o "O"
+    trisCells.forEach((cell, i) => {
+        const s = symbols[i];
+        if (s === "X") {
+            cell.textContent = "✕";
+            cell.className = "tris-cell x";
+            cell.disabled = true;
+        } else if (s === "O") {
+            cell.textContent = "○";
+            cell.className = "tris-cell o";
+            cell.disabled = true;
+        } else {
+            // cella vuota: abilitata solo se è il mio turno
+            cell.textContent = "";
+            cell.className = "tris-cell";
+            cell.disabled = !isMyTurn;
+        }
+    });
+}
+
+// clic su una cella della scacchiera
+trisCells.forEach((cell) => {
+    cell.addEventListener("click", () => {
+        if (!isMyTurn || cell.disabled || cell.textContent !== "") return;
+
+        const numero = parseInt(cell.dataset.cell);
+        socket.emit("tris_move", { cell: numero });
+
+        // disabilito subito tutti i bottoni (aspetto la risposta del server)
+        isMyTurn = false;
+        trisStatus.textContent = "⏳ Aspetta il turno dell'avversario…";
+        trisCells.forEach(c => { c.disabled = true; });
+    });
+});
+
+// ===================== PARSING DEI MESSAGGI CHAT =====================
 function handleIncoming(text) {
     // 1) Lista utenti -> aggiorno la sidebar
     const listMatch = text.match(/^Utenti nella stanza '.*?':\s*(.*)$/);
     if (listMatch) {
         updateUsersList(listMatch[1]);
-        // se l'utente ha chiesto /list esplicitamente, mostro anche un avviso in chat
         if (wantListEcho) {
             addSystemMessage(text);
             wantListEcho = false;
@@ -129,7 +274,7 @@ function handleIncoming(text) {
         return;
     }
 
-    // 3) Messaggi di sistema (ingressi/uscite/benvenuto/avvisi)
+    // 3) Messaggi di sistema
     if (
         /^Benvenuto nella stanza/.test(text) ||
         /è entrato nella stanza/.test(text) ||
@@ -139,7 +284,6 @@ function handleIncoming(text) {
         /^Stanza non trovata/.test(text)
     ) {
         addSystemMessage(text);
-        // se qualcuno entra o esce, aggiorno la lista utenti
         if (/entrato nella stanza|ha lasciato la stanza/.test(text)) {
             socket.emit("send_message", { text: "/list" });
         }
@@ -225,7 +369,6 @@ function updateUsersList(raw) {
         li.appendChild(avatar);
         li.appendChild(label);
 
-        // clic su un utente -> precompilo un messaggio privato
         if (name !== myName) {
             li.addEventListener("click", () => {
                 messageInput.value = `/msg ${name} `;
@@ -239,17 +382,42 @@ function updateUsersList(raw) {
     updateMsgUserPicker();
 }
 
+// ===================== UTILITIES =====================
+const AVATAR_COLORS = [
+    "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b",
+    "#22c55e", "#06b6d4", "#ef4444", "#14b8a6",
+];
+
+function colorFor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function initials(name) {
+    return (name.trim()[0] || "?").toUpperCase();
+}
+
+function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// ===================== COMANDI CHAT =====================
+const COMMANDS = [
+    { name: "/msg", args: " ", desc: "Messaggio privato a un utente", template: "/msg " },
+    { name: "/list", args: "", desc: "Mostra gli utenti nella stanza", template: "/list" },
+    { name: "/quit", args: "", desc: "Esci dalla chat", template: "/quit" },
+];
+
 function getMsgPickerFilter(text) {
     if (!text.startsWith("/msg")) return null;
-
     const rest = text.slice(4);
     if (rest === "" || rest === " ") return "";
-
     if (!rest.startsWith(" ")) return null;
-
     const partial = rest.slice(1);
     if (partial.includes(" ")) return null;
-
     return partial.toLowerCase();
 }
 
@@ -266,17 +434,13 @@ function selectMsgUser(name) {
 
 function updateMsgUserPicker() {
     const filter = getMsgPickerFilter(messageInput.value);
-    if (filter === null) {
-        hideMsgUserPicker();
-        return;
-    }
+    if (filter === null) { hideMsgUserPicker(); return; }
 
     const candidates = roomUsers.filter(
         (name) => name !== myName && name.toLowerCase().startsWith(filter)
     );
 
     msgUserPicker.innerHTML = "";
-
     if (candidates.length === 0) {
         const empty = document.createElement("li");
         empty.className = "msg-user-picker-empty";
@@ -290,34 +454,25 @@ function updateMsgUserPicker() {
         const li = document.createElement("li");
         li.className = "user-item";
         li.setAttribute("role", "option");
-
         const avatar = document.createElement("div");
         avatar.className = "avatar";
         avatar.textContent = initials(name);
         avatar.style.background = colorFor(name);
-
         const label = document.createElement("span");
         label.textContent = name;
-
         li.appendChild(avatar);
         li.appendChild(label);
         li.dataset.selectable = "1";
         li.__select = () => selectMsgUser(name);
         li.__complete = () => selectMsgUser(name);
-        li.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            selectMsgUser(name);
-        });
-
+        li.addEventListener("mousedown", (e) => { e.preventDefault(); selectMsgUser(name); });
         msgUserPicker.appendChild(li);
     });
-
     msgUserPicker.hidden = false;
 }
 
 function getCmdPickerFilter(text) {
     if (!text.startsWith("/")) return null;
-    // appena c'è uno spazio il comando è stato scelto -> niente lista comandi
     if (text.includes(" ")) return null;
     return text.slice(1).toLowerCase();
 }
@@ -328,7 +483,6 @@ function hideCmdPicker() {
 }
 
 function selectCmd(cmd) {
-    // comandi senza argomenti (/list, /quit): eseguo subito (clic o Invio)
     if (cmd.args === "") {
         messageInput.value = cmd.template;
         hideAllPickers();
@@ -336,70 +490,48 @@ function selectCmd(cmd) {
         messageInput.focus();
         return;
     }
-
-    // comandi con argomenti (/msg ): compilo e apro la lista utenti
     completeCmd(cmd);
 }
 
-// Tab: completa solo il testo del comando, senza eseguire.
 function completeCmd(cmd) {
     messageInput.value = cmd.template;
     hideCmdPicker();
     messageInput.focus();
-    if (cmd.args !== "") {
-        updateMsgUserPicker();
-    }
+    if (cmd.args !== "") { updateMsgUserPicker(); }
     syncPickerItems();
 }
 
 function updateCmdPicker() {
     const filter = getCmdPickerFilter(messageInput.value);
-    if (filter === null) {
-        hideCmdPicker();
-        return false;
-    }
+    if (filter === null) { hideCmdPicker(); return false; }
 
     const matches = COMMANDS.filter((c) => c.name.slice(1).startsWith(filter));
     cmdPicker.innerHTML = "";
-
-    if (matches.length === 0) {
-        hideCmdPicker();
-        return false;
-    }
+    if (matches.length === 0) { hideCmdPicker(); return false; }
 
     matches.forEach((cmd) => {
         const li = document.createElement("li");
         li.className = "cmd-item";
         li.setAttribute("role", "option");
-
         const name = document.createElement("div");
         name.className = "cmd-name";
         const matched = filter.length;
-        name.innerHTML =
-            "/<b>" + cmd.name.slice(1, 1 + matched) + "</b>" + cmd.name.slice(1 + matched);
-
+        name.innerHTML = "/<b>" + cmd.name.slice(1, 1 + matched) + "</b>" + cmd.name.slice(1 + matched);
         const desc = document.createElement("div");
         desc.className = "cmd-desc";
         desc.textContent = cmd.desc;
-
         li.appendChild(name);
         li.appendChild(desc);
         li.dataset.selectable = "1";
-        li.__select = () => selectCmd(cmd);     // Invio / clic: conferma (esegue se senza argomenti)
-        li.__complete = () => completeCmd(cmd);  // Tab: completa solo il testo
-        li.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            selectCmd(cmd);
-        });
-
+        li.__select = () => selectCmd(cmd);
+        li.__complete = () => completeCmd(cmd);
+        li.addEventListener("mousedown", (e) => { e.preventDefault(); selectCmd(cmd); });
         cmdPicker.appendChild(li);
     });
-
     cmdPicker.hidden = false;
     return true;
 }
 
-// --- Navigazione da tastiera (frecce / Tab / Invio) ---
 let pickerItems = [];
 let activeIndex = -1;
 
@@ -417,10 +549,7 @@ function syncPickerItems() {
 
 function setActive(idx) {
     pickerItems.forEach((el) => el.classList.remove("is-active"));
-    if (pickerItems.length === 0) {
-        activeIndex = -1;
-        return;
-    }
+    if (pickerItems.length === 0) { activeIndex = -1; return; }
     activeIndex = (idx + pickerItems.length) % pickerItems.length;
     const el = pickerItems[activeIndex];
     el.classList.add("is-active");
@@ -435,56 +564,29 @@ function hideAllPickers() {
 }
 
 function refreshPickers() {
-    // la lista comandi ha priorità mentre si digita il nome del comando
-    if (updateCmdPicker()) {
-        hideMsgUserPicker();
-    } else {
-        updateMsgUserPicker();
-    }
+    if (updateCmdPicker()) { hideMsgUserPicker(); } else { updateMsgUserPicker(); }
     syncPickerItems();
 }
 
 messageInput.addEventListener("input", refreshPickers);
 
 messageInput.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-        hideAllPickers();
-        return;
-    }
-
+    if (e.key === "Escape") { hideAllPickers(); return; }
     if (!activePicker() || pickerItems.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setActive(activeIndex + 1);
-    } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setActive(activeIndex - 1);
-    } else if (e.key === "Tab") {
-        // Tab completa la voce evidenziata (o la prima) senza eseguire
-        e.preventDefault();
-        const idx = activeIndex >= 0 ? activeIndex : 0;
-        pickerItems[idx].__complete();
-    } else if (e.key === "Enter") {
-        // Invio conferma solo se una voce è evidenziata, altrimenti invia il messaggio
-        if (activeIndex >= 0) {
-            e.preventDefault();
-            pickerItems[activeIndex].__select();
-        }
-    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive(activeIndex + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(activeIndex - 1); }
+    else if (e.key === "Tab") { e.preventDefault(); const idx = activeIndex >= 0 ? activeIndex : 0; pickerItems[idx].__complete(); }
+    else if (e.key === "Enter") { if (activeIndex >= 0) { e.preventDefault(); pickerItems[activeIndex].__select(); } }
 });
 
-messageInput.addEventListener("blur", () => {
-    setTimeout(hideAllPickers, 150);
-});
+messageInput.addEventListener("blur", () => { setTimeout(hideAllPickers, 150); });
 
-// ===================== INVIO MESSAGGI =====================
+// ===================== INVIO MESSAGGI CHAT =====================
 messageForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = messageInput.value.trim();
     if (!text) return;
 
-    // mostro subito i miei messaggi (il server non li rimanda al mittente)
     if (text === "/quit") {
         socket.emit("send_message", { text });
         location.reload();
@@ -509,14 +611,12 @@ messageForm.addEventListener("submit", (e) => {
     }
 
     if (text.startsWith("/")) {
-        // altri comandi: li inoltro senza eco locale
         socket.emit("send_message", { text });
         messageInput.value = "";
         hideAllPickers();
         return;
     }
 
-    // messaggio normale: eco locale + invio
     addChatMessage(myName, text, { mine: true, priv: false });
     socket.emit("send_message", { text });
     messageInput.value = "";
@@ -533,6 +633,10 @@ refreshUsersBtn.addEventListener("click", () => {
 });
 
 leaveBtn.addEventListener("click", () => {
-    socket.emit("send_message", { text: "/quit" });
-    location.reload();
+    if (currentMode === "tris") {
+        location.reload();
+    } else {
+        socket.emit("send_message", { text: "/quit" });
+        location.reload();
+    }
 });
