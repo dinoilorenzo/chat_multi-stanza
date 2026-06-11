@@ -75,9 +75,9 @@ class Bridge:
                 text = data.decode("utf-8")
                 # il server puo' inviare piu' righe insieme: le separo
                 for line in text.split("\n"):
-                    line = line.strip()
-                    if line:
-                        socketio.emit("message", {"text": line}, to=self.sid)
+                    line_clean = line.rstrip('\r\n')
+                    if line_clean.strip():
+                        socketio.emit("message", {"text": line_clean}, to=self.sid)
             except Exception:
                 break
 

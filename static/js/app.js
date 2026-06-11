@@ -98,8 +98,8 @@ socket.on("message", ({ text }) => {
 // ===================== PARSING DEI MESSAGGI =====================
 function handleIncoming(text) {
 
-    // 1) Riga della scacchiera tris (contiene " | ") → aggiorno la UI grafica
-    if (text.includes(" | ") && text.includes("---+---+---") === false) {
+    // 1) Riga della scacchiera tris (es. " X | O |   ") → aggiorno la UI grafica
+    if (/^\s*[XO ]\s*\|\s*[XO ]\s*\|\s*[XO ]\s*$/.test(text)) {
         if (gameActive) {
             parseBoardLine(text);
         }
@@ -120,7 +120,7 @@ function handleIncoming(text) {
     }
 
     // 4) "Tocca a te" → abilito le celle
-    if (/Tocca a te/i.test(text)) {
+    if (/^(Tu sei X\.\s+)?Tocca a te/i.test(text)) {
         isMyTurn = true;
         trisStatus.textContent = "🟢 Tocca a te! Clicca una cella.";
         enableEmptyCells();
@@ -129,7 +129,7 @@ function handleIncoming(text) {
     }
 
     // 5) "Aspetta il tuo turno" → disabilito le celle
-    if (/Aspetta il tuo turno/i.test(text)) {
+    if (/^Tu sei O\.\s*Aspetta il tuo turno/i.test(text)) {
         isMyTurn = false;
         trisStatus.textContent = "⏳ Aspetta il turno dell'avversario…";
         disableAllCells();
@@ -138,7 +138,7 @@ function handleIncoming(text) {
     }
 
     // 6) HAI VINTO → messaggio speciale di vittoria
-    if (/HAI VINTO/i.test(text)) {
+    if (/^🏆\s*HAI VINTO/i.test(text)) {
         isMyTurn = false;
         disableAllCells();
         addWinMessage(text);
@@ -146,7 +146,7 @@ function handleIncoming(text) {
     }
 
     // 7) HAI PERSO → messaggio speciale di sconfitta
-    if (/HAI PERSO/i.test(text)) {
+    if (/^😞\s*HAI PERSO/i.test(text)) {
         isMyTurn = false;
         disableAllCells();
         addLoseMessage(text);
@@ -154,7 +154,7 @@ function handleIncoming(text) {
     }
 
     // 8) Fine partita → nascondo la scacchiera dopo qualche secondo
-    if (/Potete continuare a chattare/i.test(text)) {
+    if (/^Potete continuare a chattare|^Potete usare \/game|^===\s+.*\s+Partita annullata\./i.test(text)) {
         addSystemMessage(text);
         setTimeout(hideBoard, 3000);
         return;
@@ -181,20 +181,20 @@ function handleIncoming(text) {
     // 11) Messaggi di sistema (entrate/uscite/benvenuto/avvisi/tris)
     if (
         /^Benvenuto nella stanza/.test(text) ||
-        /entrato nella stanza/.test(text) ||
-        /ha lasciato la stanza/.test(text) ||
+        /^[^:]+ è entrato nella stanza\./.test(text) ||
+        /^[^:]+ ha lasciato la stanza\./.test(text) ||
         /^Utente '.*' non trovato/.test(text) ||
         /^Uso:/.test(text) ||
         /^Comandi:/.test(text) ||
         /^===/.test(text) ||
         /^Servono almeno/.test(text) ||
-        /non c'è nessuna partita/i.test(text) ||
+        /^[^:]*non c'è nessuna partita/i.test(text) ||
         /^Non sei uno dei giocatori/.test(text) ||
-        /c'è già una partita/i.test(text) ||
+        /^[^:]*c'è già una partita/i.test(text) ||
         /^Pareggio/.test(text)
     ) {
         addSystemMessage(text);
-        if (/entrato nella stanza|ha lasciato la stanza/.test(text)) {
+        if (/ è entrato nella stanza\.| ha lasciato la stanza\./.test(text)) {
             socket.emit("send_message", { text: "/list" });
         }
         return;
